@@ -1,0 +1,59 @@
+name: reusable-build
+
+on:
+  workflow_call:
+    outputs:
+      digest:
+        description: SHA256 digest of the built binary
+        value: ${{ jobs.build.outputs.digest }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      digest: ${{ steps.hash.outputs.digest }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+
+      - name: Build
+        run: |
+          mkdir -p dist
+          go build -o dist/slsa-workshop main.go
+
+      - name: Digest
+        id: hash
+        run: echo "digest=sha256:$(sha256sum dist/slsa-workshop | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: slsa-workshop
+          path: dist/slsa-workshop
+
+  attest:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+
+    steps:
+      - name: Generate provenance
+        uses: actions/attest@v4
+        with:
+          subject-name: slsa-workshop
+          subject-digest: ${{ needs.build.outputs.digest }}
